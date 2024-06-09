@@ -1,0 +1,7 @@
+#! /usr/bin/env nix-shell
+#! nix-shell -i bash -Q shell.nix
+set -xe
+DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+cargo build
+PLUGIN=$DIR/target/debug/cln-plugin-hello
+$DIR/cln-cli -k plugin subcommand=start plugin=$PLUGIN "$@"

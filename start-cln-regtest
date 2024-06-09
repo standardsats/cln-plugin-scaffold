@@ -1,0 +1,67 @@
+#! /usr/bin/env nix-shell
+#! nix-shell -i bash -Q shell.nix
+
+# Function to check if a service is up
+check_service() {
+  local COMMAND=$1
+  local SLEEP_INTERVAL=$2
+  local MAX_ATTEMPTS=$3
+
+  local attempt=1
+
+  while [ $attempt -le $MAX_ATTEMPTS ]; do
+    echo "Attempt $attempt: Checking $URL"
+    
+    # Execute curl and check if it was successful
+    # Example of command curl --silent --fail $URL > /dev/null
+    if $COMMAND; then
+      echo "Service is up!"
+      return 0
+    else
+      echo "Service not available yet. Waiting for $SLEEP_INTERVAL seconds..."
+    fi
+
+    # Wait for the specified interval before the next check
+    sleep $SLEEP_INTERVAL
+
+    # Increment the attempt counter
+    attempt=$(( attempt + 1 ))
+  done
+
+  echo "Service did not become available after $(( MAX_ATTEMPTS * SLEEP_INTERVAL )) seconds."
+  return 1
+}
+
+echo "Starting Bitcoin regtest node"
+export BITCOIN_DATA=./data-bitcoind
+mkdir -p $BITCOIN_DATA
+# user: test, password: test
+bitcoind -chain=regtest -datadir=$BITCOIN_DATA -daemon -fallbackfee=0.00001 -server -rpcallowip=127.0.0.1 -rpcbind=127.0.0.1 -rpcauth=test:ba4391646a4ea8d970d99b29ee8994c3\$8b0f234e4c4c066bc9e87cf2af91bf88ed77607bfb25ea20ba852e06b30b7255
+export BTC_CLI="bitcoin-cli -chain=regtest -datadir=$BITCOIN_DATA"
+check_service "$BTC_CLI getnetworkinfo" 5 60
+if [ ! -d "$BITCOIN_DATA/regtest/wallets/miner" ]; then 
+    $BTC_CLI createwallet "miner"
+    export GEN_ADDR=$($BTC_CLI getnewaddress "miner")
+    echo "Mining 100 blocks to address $GEN_ADDR"
+    $BTC_CLI generatetoaddress 100 $GEN_ADDR
+else 
+    $BTC_CLI loadwallet "miner"
+fi
+
+function finish_btc {
+    echo "Stopping bitcoin daemon..."
+    kill $(cat $BITCOIN_DATA/regtest/bitcoind.pid)
+}
+trap finish_btc EXIT
+
+echo "Staring CLN"
+export CLN_DATA=./data-cln
+mkdir -p $CLN_DATA
+lightningd --network=regtest \
+  --log-level=debug \
+  --lightning-dir=$CLN_DATA \
+  --bitcoin-rpcuser=test \
+  --bitcoin-rpcpassword=test \
+  --rgb D8EFD3 \
+  --alias "Regtest CLN" 
+
